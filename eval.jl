@@ -20,7 +20,7 @@ x = x .+ 0.1f0 .* randn(Float32, size(x))
 x = clamp.(x, -1f0, 1f0)
 colorview(RGB, x[1, :, :, :])
 
-for num in [50, 100, 150, 200, 250, 300]
+for num in [50, 100, 150, 200, 250, 300, 350, 400, 450, 500]
     data = JLD2.load("ckpts/checkpoint_$(num).jld2")
     model = data["model"]
     θ = data["θ_cpu"]
@@ -34,12 +34,16 @@ colorview(RGB, broken_down[3][2, :, :, :])
 colorview(RGB, broken_down[4][2, :, :, :])
 colorview(RGB, broken_down[5][2, :, :, :])
 colorview(RGB, broken_down[6][2, :, :, :])
+colorview(RGB, broken_down[7][2, :, :, :])
+colorview(RGB, broken_down[8][2, :, :, :])
+colorview(RGB, broken_down[9][2, :, :, :])
+colorview(RGB, broken_down[10][2, :, :, :])
 
 for i in 1:length(broken_down)
     println("energy: ", mean(broken_down[i][1, :, :, :].^2))
 end
 
-data = JLD2.load("ckpts/checkpoint_300.jld2")
+data = JLD2.load("ckpts/checkpoint_500.jld2")
 model = data["model"]
 θ = data["θ_cpu"]
 losses = data["losses"]
@@ -75,6 +79,9 @@ colorview(RGB, test2[2][1, :, :, :])
 colorview(RGB, test2[3][1, :, :, :])
 colorview(RGB, test2[4][1, :, :, :])
 colorview(RGB, test2[5][1, :, :, :])
+
+# Plot difference
+colorview(RGB, test2[5][1, :, :, :] - x[1, :, :, :])
 
 # Sanity check invertibility
 xtest = x[1:1, :, :, :]
