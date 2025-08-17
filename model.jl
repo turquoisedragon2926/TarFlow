@@ -35,12 +35,13 @@ end
 Forward over image batch x of shape (B, C, H, W).
 Returns (z, outputs, logdet) where z has same shape as x and logdet is (B,).
 """
-function forward(model::TarFlow, θ::Parameters, x::AbstractArray{<:Real,4})
+function forward(model::TarFlow, θ::Any, x::AbstractArray{<:Real,4})
     patches = patch_data(model.patch_config, x)  # (B, T, Cin)
+    attn_mask = tril_mask(size(patches,2))
     outputs = [x]
     lds = Float32[]
     for block in model.blocks
-        patches, ld = forward(block, θ, patches)
+        patches, ld = forward(block, θ, patches; attn_mask=attn_mask)
         push!(outputs, unpatch_data(model.patch_config, patches))
         push!(lds, ld...)
     end
@@ -51,7 +52,7 @@ function forward(model::TarFlow, θ::Parameters, x::AbstractArray{<:Real,4})
     return z, outputs, logdets
 end
 
-function backward(model::TarFlow, θ::Parameters, x::AbstractArray{<:Real,4})
+function backward(model::TarFlow, θ::Any, x::AbstractArray{<:Real,4})
     B, C, H, W = size(x)
 
     patches = patch_data(model.patch_config, x)  # (B, T, Cin)
@@ -71,3 +72,6 @@ function backward(model::TarFlow, θ::Parameters, x::AbstractArray{<:Real,4})
     end
     return outputs
 end
+
+# TODO: support forward and backward on GPU
+# TODO: support gradient for patching operation: low priority

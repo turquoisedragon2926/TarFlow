@@ -55,4 +55,4 @@ end
 """
 Create a lower triangular mask for a given sequence length.
 """
-tril_mask(n::Int) = (tril(ones(Bool, n, n)) .== 1)
+tril_mask(n::Int) = tril(ones(Bool, n, n))

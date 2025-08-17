@@ -45,7 +45,7 @@ Scaled dot-product attention using ParametricOperators.
 Input x: (B, T, C). Returns (B, T, C).
 """
 
-function forward(A::Attention, θ::Parameters, x::AbstractArray{<:Real,3};
+function forward(A::Attention, θ::Any, x::AbstractArray{<:Real,3};
                  mask::AbstractMatrix{<:Real}=ones(Bool, size(x,2), size(x,2)),
                  temp::Float32=1.0f0)
 
@@ -63,42 +63,38 @@ function forward(A::Attention, θ::Parameters, x::AbstractArray{<:Real,3};
     k = @view qkv[:, :, 2, :, :]
     v = @view qkv[:, :, 3, :, :]
 
+    q = permutedims(q, (2, 4, 1, 3)) # (T, D, B, H)
+    k = permutedims(k, (2, 4, 1, 3)) # (T, D, B, H)
+    v = permutedims(v, (2, 4, 1, 3)) # (T, D, B, H)
+
+    # Flatten heads: (T, D, B*H)
+    qBL = reshape(q, T, D, B*H)
+    kBL = reshape(k, T, D, B*H)
+    vBL = reshape(v, T, D, B*H)
+
     # match python sqrt_scale**2 / temp where sqrt_scale = D**(-0.25)
     s = Float32(D^-0.5 / temp)
-
-    # Flatten heads: (B*H, T, D)
-    q2 = reshape(q, B*H, T, D)
-    k2 = reshape(k, B*H, T, D)
-    v2 = reshape(v, B*H, T, D)
-
-    # q2,k2,v2 are (BH, T, D)
-    qBL = permutedims(q2, (2,3,1))            # (T, D, BH)
-    kBL = permutedims(k2, (2,3,1))            # (T, D, BH)
-
     # scores: (T,T,BH) = (T,D,BH) × (D,T,BH)
     scoresBL = batched_mul(qBL, permutedims(kBL, (2,1,3))) .* s  # (T, T, BH)
 
     # mask (T,T) → (T,T,1) and broadcast; no mutation
     if !isnothing(mask)
         @assert size(mask) == (size(scoresBL,1), size(scoresBL,2))
-        m = reshape(mask .!= 0, size(scoresBL,1), size(scoresBL,2), 1)
-        neginf = convert(eltype(scoresBL), -Inf)     # e.g., -Inf32 on Float32, works on GPU too
-        scoresBL = ifelse.(m, scoresBL, neginf)      # elementwise selection, no mutation
+        m = reshape(Float32.(mask), size(scoresBL,1), size(scoresBL,2), 1)
+        neginf = convert(eltype(scoresBL), -1e9) # finit substitute for -Inf
+        scoresBL = scoresBL .* m .+ (1f0 .- m) .* neginf
     end
 
     # softmax over keys (the 2nd dim in (Tq,Tk,BH))
     scoresBL = Flux.softmax(scoresBL; dims=2)  # (T, T, BH)
-
     # context: (T,D,BH) = (T,T,BH) × (T,D,BH)
-    vBL  = permutedims(v2, (2,3,1))            # (T, D, BH)
     ctxBL = batched_mul(scoresBL, vBL)         # (T, D, BH)
-
-    # back to (BH, T, D)
     ctx = permutedims(ctxBL, (3,1,2))          # (BH, T, D)
 
 
     # Merge heads and project
-    x_out = reshape(ctx, B, T, H, D)
+    x_out = reshape(ctx, B, H, T, D)
+    x_out = permutedims(x_out, (1, 3, 2, 4))
     x_out = reshape(x_out, B, T, C)
     x_out = reshape(reshape(x_out, :, C) * A.proj(θ), B, T, :)
     return x_out
@@ -122,7 +118,7 @@ function init!(m::MLP, θ::Parameters)
     return θ
 end
 
-function forward(m::MLP, θ::Parameters, x::AbstractArray{<:Real,3})
+function forward(m::MLP, θ::Any, x::AbstractArray{<:Real,3})
     x̂ = layernorm(x)
     h = x̂ * m.fc1(θ)
     h = Flux.gelu.(h)
@@ -145,7 +141,7 @@ function init!(b::AttentionBlock, θ::Parameters)
     return θ
 end
 
-function forward(b::AttentionBlock, θ::Parameters, x::AbstractArray{<:Real,3}; mask::AbstractMatrix{<:Real}=ones(Bool, size(x,2), size(x,2)))
+function forward(b::AttentionBlock, θ::Any, x::AbstractArray{<:Real,3}; mask::AbstractMatrix{<:Real}=ones(Bool, size(x,2), size(x,2)))
     x = x .+ forward(b.attn, θ, x; mask=mask)
     x = x .+ forward(b.mlp, θ, x)
     return x

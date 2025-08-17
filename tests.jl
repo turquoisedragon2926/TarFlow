@@ -25,7 +25,7 @@ function test_forward_shapes()
     θ = ParametricOperators.init!(model, Dict{ParOperator,Any}())
     z, outs, ld = forward(model, θ, x)
     @assert size(z) == size(x)
-    @assert length(outs) == 2
+    @assert length(outs) == 2 + 1
     @assert length(ld) == B
     println("Forward shapes OK")
 end
@@ -142,6 +142,61 @@ function test_backward_roundtrip()
     println("Backward roundtrip OK")
 end
 
+function test_block_invertibility()
+    # Test single MetaBlock invertibility
+    B, T, C = 2, 64, 192  # B=batch, T=sequence length, C=channels
+    x = rand(Float32, B, T, C)
+    block = MetaBlock(C, 64, T; attn_layers_per_block=2, head_dim=16, expansion=4)
+    θ = ParametricOperators.init!(block, Dict{ParOperator,Any}())
+    
+    # Forward pass
+    z, _ = forward(block, θ, x)
+    
+    # Backward pass
+    x_recon = backward(block, θ, z)
+    
+    # Check reconstruction matches input
+    @assert maximum(abs, x_recon .- x) < 1e-5 "MetaBlock failed invertibility test"
+    println("Block invertibility OK")
+end
+
+function test_flow_invertibility()
+    # Test full TarFlow invertibility
+    B, C, H, W = 1, 3, 64, 64
+    x = rand(Float32, B, C, H, W)
+    model = TarFlow(C, H, 8, 64, 3; attn_layers_per_block=2, head_dim=16, expansion=4)
+    θ = ParametricOperators.init!(model, Dict{ParOperator,Any}())
+    
+    # Forward pass through full model
+    z, _, _ = forward(model, θ, x)
+    
+    # Backward pass through full model 
+    x_recon = backward(model, θ, z)[end]
+    
+    # Check reconstruction matches input
+    @assert maximum(abs, x_recon .- x) < 1e-5 "TarFlow failed invertibility test"
+    println("Flow invertibility OK")
+end
+
+function test_attention_causal_consistency()
+    # Test that causal attention gives same output for prefix when run on full sequence vs prefix only
+    Random.seed!(100)
+    B, T, C = 1, 2, 6  # B=batch, T=sequence length, C=channels
+    x = rand(Float32, B, T, C)
+    attn = Attention(C, C÷2)
+    θ = ParametricOperators.init!(attn, Dict{ParOperator,Any}())
+    
+    # Run on full sequence with causal mask
+    full_out = forward(attn, θ, x; mask=tril_mask(T))
+    
+    # Run on just first token 
+    prefix_out = forward(attn, θ, x[:, 1:1, :]; mask=tril_mask(1))
+    
+    # First token output should match between both runs
+    @assert norm(full_out[1, 1, :] - prefix_out[1, 1, :]) < 1e-5 "Attention failed causal consistency test"
+    println("Attention causal consistency OK")
+end
+
 
 test_patch_roundtrip()
 test_forward_shapes()
@@ -150,3 +205,6 @@ test_attention_block_gradients()
 test_model_gradients()
 test_gradient_update()
 test_backward_roundtrip()
+test_block_invertibility()
+test_flow_invertibility()
+test_attention_causal_consistency()

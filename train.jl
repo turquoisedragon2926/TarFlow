@@ -4,6 +4,7 @@ using JLD2
 using Random
 using ParametricOperators
 using ProgressMeter
+import ParametricOperators: gpu, cpu
 
 include("data.jl")
 include("utils.jl")
@@ -29,10 +30,13 @@ include("model.jl")
     warmup_steps::Int=500     # LR warmup steps
 end
 
-function main(hp::HyperParams=HyperParams(), dataset::AbstractDataset=SingleCatDataset())
+function main(hp::HyperParams=HyperParams(), dataset::AbstractDataset=SingleCatDataset(); device=cpu)
     Random.seed!(123) # To recreate model weights & load ckpts
     model = TarFlow(hp.C, hp.H, hp.patch, hp.channels, hp.num_blocks; attn_layers_per_block=hp.attn_layers_per_block, head_dim=hp.head_dim, expansion=hp.expansion)
-    θ = ParametricOperators.init!(model, Dict{ParametricOperators.ParOperator,Any}())
+    θ = Dict{ParametricOperators.ParOperator,Any}()
+    init!(model, θ)
+    θ = θ |> device
+
     base_lr = 1e-4
     opt = Flux.Optimisers.AdamW(base_lr, (0.9, 0.95), 1e-4)
     state = Flux.Optimisers.setup(opt, θ)
@@ -65,14 +69,15 @@ function main(hp::HyperParams=HyperParams(), dataset::AbstractDataset=SingleCatD
             # Add Gaussian input noise and clamp to [0,1]
             x = x .+ hp.noise_std .* randn(Float32, size(x))
             x = clamp.(x, -1f0, 1f0)
-            p = patch_data(model.patch_config, x)
+            p = patch_data(model.patch_config, x) |> device
+            attn_mask = tril_mask(size(p,2)) |> device
             global ld_term = 0.0f0
             global l2_term = 0.0f0
             # Compute in patch space to avoid non-differentiable unpatch
             loss, grads = Flux.withgradient(θ, p) do θp, p
                 ld_acc = 0.0f0
                 for b in model.blocks
-                    p, ld = forward(b, θp, p)
+                    p, ld = forward(b, θp, p; attn_mask=attn_mask)
                     ld_acc += sum(ld)
                 end
                 global l2_term = 0.5f0 * mean(p.^2)
@@ -107,26 +112,21 @@ function main(hp::HyperParams=HyperParams(), dataset::AbstractDataset=SingleCatD
             state, θ = Flux.Optimisers.update(state, θ, gdict)
             θ = Dict{ParOperator, Any}(θ)
         end
-        @info "epoch=$epoch loss=$(total/hp.steps_per_epoch)"
+        meter.desc = "epoch=$epoch loss=$(round(total/hp.steps_per_epoch, digits=4))"
         if epoch % hp.save_every == 0
             samples = []
+            θ_cpu = θ |> cpu
             for _ in 1:10
                 noise = randn(Float32, 1, hp.C, hp.H, hp.H)
-                x_recon = backward(model, θ, noise)
+                x_recon = backward(model, θ_cpu, noise)
                 push!(samples, x_recon)
             end
             @info "Saving checkpoint"
-            JLD2.@save "ckpts/checkpoint_$(epoch).jld2" model θ samples losses l2_terms ld_terms
+            JLD2.@save "ckpts/checkpoint_$(epoch).jld2" model θ_cpu samples losses l2_terms ld_terms
         end
         next!(meter)
     end
 end
-
-# if abspath(PROGRAM_FILE) == @__FILE__
-#     dataset = SingleCatDataset()
-#     hp = HyperParams(epochs=20, steps_per_epoch=2, batch=1, H=64, C=3)
-#     main(hp, dataset)
-# end
 
 hp = HyperParams(epochs=500, 
                 steps_per_epoch=2, 
@@ -134,11 +134,11 @@ hp = HyperParams(epochs=500,
                 channels=128,
                 H=64, 
                 C=3, 
-                save_every=100,
+                save_every=50,
                 attn_layers_per_block=4,
                 num_blocks=4,
                 head_dim=8,
                 expansion=4,
                 noise_std=0.1)
 dataset = SingleCatDataset()
-main(hp, dataset)
+main(hp, dataset; device=gpu)

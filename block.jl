@@ -2,7 +2,7 @@ using Flux
 using ParametricOperators
 using ChainRulesCore
 import ChainRulesCore: rrule, NoTangent, ZeroTangent
-
+import ParametricOperators: gpu
 import ParametricOperators: init!, Parameters
 include("attention.jl")
 include("utils.jl")
@@ -89,21 +89,22 @@ function init!(m::MetaBlock, θ::Parameters)
     return θ
 end
 
-function forward(m::MetaBlock, θ::Parameters, x::AbstractArray{<:Real,3})
+function forward(m::MetaBlock, θ::Any, x::AbstractArray{<:Real,3}; attn_mask::AbstractArray{<:Real,2}=tril_mask(size(x,2)))
     # x: (B, T, Cin)
     B, T, Cin = size(x)
     x_in = x[:, m.permutation, :]
     
     x = x_in * m.proj_in(θ)               # (B, T, C)
     x = x + m.pos_embed(θ)
-    attn_mask = tril_mask(T)
     for b in m.attn_blocks
         x = forward(b, θ, x; mask=attn_mask)
     end
     h = x * m.proj_out(θ)                 # (B, T, out_dim)
 
     # shift h to the right by one token
-    h = cat(zeros(eltype(h), B, 1, size(h,3)), h[:,1:end-1,:], dims=2)
+    zhead = h[:, T:T, :] .* 0f0 # TODO: check if this is correct bc somehow its giving different loss
+    # zhead = zeros(eltype(h), B, 1, size(h,3)) |> gpu
+    h = cat(zhead, @view h[:, 1:T-1, :]; dims=2)
 
     if m.nvp
         a = @view h[:,:,1:Cin]
@@ -120,10 +121,12 @@ function forward(m::MetaBlock, θ::Parameters, x::AbstractArray{<:Real,3})
     return y, ld
 end
 
-function backward(m::MetaBlock, θ::Parameters, x::AbstractArray{<:Real,3})
+# TODO: support sampling on GPU
+function backward(m::MetaBlock, θ::Any, x::AbstractArray{<:Real,3})
     # x is (B, T, Cin). At entry, x holds z (latents) for this block.
     # We will reconstruct in place: token 1 is identity; tokens 2..T get inverted.
     B, T, Cin = size(x)
+    x = x[:, m.permutation, :]
 
     pos = ParametricOperators.params(m.pos_embed(θ))        # (T, C)
     Win = m.proj_in(θ)          # (Cin, C)
@@ -160,5 +163,5 @@ function backward(m::MetaBlock, θ::Parameters, x::AbstractArray{<:Real,3})
         x[:, i+1:i+1, :] .= x[:, i+1:i+1, :] .* exp_a .+ b_last
     end
 
-    return x
+    return x[:, m.inv_permutation, :]
 end
