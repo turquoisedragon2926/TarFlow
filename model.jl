@@ -11,11 +11,10 @@ struct TarFlow
     nvp::Bool
 end
 
-function TarFlow(in_channels::Int, img_size::Int, patch_size::Int,
+function TarFlow(in_channels::Int, H::Int, W::Int, patch_size::Int,
                  channels::Int, num_blocks::Int; attn_layers_per_block::Int=1, head_dim::Int=64, expansion::Int=4, nvp::Bool=true)
-    num_patches_side = img_size ÷ patch_size
-    num_patches = num_patches_side^2
-    cfg = PatchConfig(img_size, img_size, patch_size, img_size, img_size)
+    num_patches = (H*W) ÷ patch_size^2
+    cfg = PatchConfig(H, W, patch_size, H, W)
     blocks = [MetaBlock(in_channels * patch_size^2, channels, num_patches;
                         attn_layers_per_block=attn_layers_per_block, 
                         head_dim=head_dim, expansion=expansion, nvp=nvp,

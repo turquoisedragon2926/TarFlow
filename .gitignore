@@ -1,3 +1,5 @@
 python.py
 ParametricOperators.jl/
 ckpts/
+data/
+vel_ckpts/

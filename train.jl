@@ -18,6 +18,7 @@ include("model.jl")
     batch::Int=8 # number of images in a batch
     C::Int=3 # number of channels in the input image per pixel
     H::Int=64 # number of pixels per dimension
+    W::Int=64 # number of pixels per dimension
     patch::Int=8 # patch size per dimension
     channels::Int=64 # number of channels per pixel
     head_dim::Int=16 # number of channels per attention head
@@ -30,9 +31,9 @@ include("model.jl")
     warmup_steps::Int=500     # LR warmup steps
 end
 
-function main(hp::HyperParams=HyperParams(), dataset::AbstractDataset=SingleCatDataset(); device=cpu)
+function main(hp::HyperParams=HyperParams(), dataset::AbstractDataset=SingleCatDataset(); device=cpu, ckpts_dir="ckpts")
     Random.seed!(123) # To recreate model weights & load ckpts
-    model = TarFlow(hp.C, hp.H, hp.patch, hp.channels, hp.num_blocks; attn_layers_per_block=hp.attn_layers_per_block, head_dim=hp.head_dim, expansion=hp.expansion)
+    model = TarFlow(hp.C, hp.H, hp.W, hp.patch, hp.channels, hp.num_blocks; attn_layers_per_block=hp.attn_layers_per_block, head_dim=hp.head_dim, expansion=hp.expansion)
     θ = Dict{ParametricOperators.ParOperator,Any}()
     init!(model, θ)
     θ = θ |> device
@@ -68,7 +69,7 @@ function main(hp::HyperParams=HyperParams(), dataset::AbstractDataset=SingleCatD
             x = get_data(dataset, step; batch=hp.batch)
             # Add Gaussian input noise and clamp to [0,1]
             x = x .+ hp.noise_std .* randn(Float32, size(x))
-            x = clamp.(x, -1f0, 1f0)
+            x = clamp.(x, -5f0, 5f0)
             p = patch_data(model.patch_config, x) |> device
             attn_mask = tril_mask(size(p,2)) |> device
             global ld_term = 0.0f0
@@ -117,28 +118,48 @@ function main(hp::HyperParams=HyperParams(), dataset::AbstractDataset=SingleCatD
             samples = []
             θ_cpu = θ |> cpu
             for _ in 1:10
-                noise = randn(Float32, 1, hp.C, hp.H, hp.H)
+                noise = randn(Float32, 1, hp.C, hp.H, hp.W)
                 x_recon = backward(model, θ_cpu, noise)
                 push!(samples, x_recon)
             end
             @info "Saving checkpoint"
-            JLD2.@save "ckpts/checkpoint_$(epoch).jld2" model θ_cpu samples losses l2_terms ld_terms
+            JLD2.@save "$(ckpts_dir)/checkpoint_$(epoch).jld2" model θ_cpu samples losses l2_terms ld_terms
         end
         next!(meter)
     end
 end
 
-hp = HyperParams(epochs=500, 
-                steps_per_epoch=2, 
+
+# #### To Train on Single Cat Dataset ####
+# hp = HyperParams(epochs=500, 
+#                 steps_per_epoch=2, 
+#                 batch=32, 
+#                 channels=128,
+#                 H=64, 
+#                 C=3, 
+#                 save_every=50,
+#                 attn_layers_per_block=4,
+#                 num_blocks=4,
+#                 head_dim=8,
+#                 expansion=4,
+#                 noise_std=0.1)
+# dataset = SingleCatDataset()
+# main(hp, dataset; device=gpu)
+
+#### To Train on Velocity Model Dataset ####
+dataset = VelocityModelDataset("data/x_data_no_zero.jld2")
+hp = HyperParams(epochs=500,
+                steps_per_epoch=50,
                 batch=32, 
-                channels=128,
-                H=64, 
-                C=3, 
-                save_every=50,
-                attn_layers_per_block=4,
-                num_blocks=4,
+                channels=256,
+                patch=64,
+                H=512, 
+                W=256, 
+                C=1, 
+                save_every=10,
+                attn_layers_per_block=8,
+                num_blocks=32,
                 head_dim=8,
                 expansion=4,
-                noise_std=0.1)
-dataset = SingleCatDataset()
-main(hp, dataset; device=gpu)
+                noise_std=0.2)
+main(hp, dataset; device=gpu, ckpts_dir="vel_ckpts")
