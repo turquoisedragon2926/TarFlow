@@ -33,11 +33,11 @@ heatmap(x_back[end][1, 1, :, :]')
 
 norm(x_back[end][1, 1, :, :] .- x[1, 1, :, :])
 
-samples = JLD2.load("vel_ckpts/checkpoint_10.jld2", "samples");
+samples = JLD2.load("vel_ckpts_new/checkpoint_15.jld2", "samples");
 using Statistics
 
 for sample_idx in 1:10
-    anim = @animate for i in 1:33
+    anim = @animate for i in 1:size(samples[sample_idx], 1)
         heatmap(samples[sample_idx][i][1, 1, :, :]', title="Flow $(i)")
     end
     gif(anim, "plots/samples_$(sample_idx).gif", fps=1)
@@ -92,3 +92,10 @@ anim = @animate for sample_idx in 1:10
     plot(p1, p2, p3, layout=l, size=(1500,400))
 end
 gif(anim, "plots/details.gif", fps=1)
+
+dataset = VelocityModelDataset("data/x_data_no_zero.jld2", subsample_size_x=8, subsample_size_y=4)
+x = get_data(dataset, 1; batch=10)
+anim = @animate for i in 1:size(x, 1)
+    heatmap(x[i, 1, :, :]', title="Sample $(i)")
+end
+gif(anim, "plots/x_data.gif", fps=1)
