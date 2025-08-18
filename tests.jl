@@ -21,7 +21,7 @@ end
 function test_forward_shapes()
     B, C, H, W = 4, 3, 32, 32
     x = rand(Float32, B, C, H, W)
-    model = TarFlow(C, H, 8, 64, 2; attn_layers_per_block=1, head_dim=64, expansion=4)
+    model = TarFlow(C, H, W, 8, 64, 2; attn_layers_per_block=1, head_dim=64, expansion=4)
     θ = ParametricOperators.init!(model, Dict{ParOperator,Any}())
     z, outs, ld = forward(model, θ, x)
     @assert size(z) == size(x)
@@ -61,7 +61,7 @@ end
 
 function test_model_gradients()
     dataset = SingleCatDataset()
-    model = TarFlow(3, 64, 8, 64, 2; attn_layers_per_block=2, head_dim=16, expansion=4)
+    model = TarFlow(3, 64, 64, 8, 64, 2; attn_layers_per_block=2, head_dim=16, expansion=4)
     θ = ParametricOperators.init!(model, Dict{ParametricOperators.ParOperator,Any}())
     x = get_data(dataset, 1; batch=1)
     p = patch_data(model.patch_config, x)
@@ -80,7 +80,7 @@ end
 
 function test_gradient_update()
     dataset = SingleCatDataset()
-    model = TarFlow(3, 64, 8, 64, 2; attn_layers_per_block=2, head_dim=16, expansion=4)
+    model = TarFlow(3, 64, 64, 8, 64, 2; attn_layers_per_block=2, head_dim=16, expansion=4)
     θ = ParametricOperators.init!(model, Dict{ParametricOperators.ParOperator,Any}())
     x = get_data(dataset, 1; batch=1)
     p = patch_data(model.patch_config, x)
@@ -120,7 +120,7 @@ end
 
 function test_backward_roundtrip()
     dataset = SingleCatDataset()
-    model = TarFlow(3, 64, 8, 64, 2; attn_layers_per_block=2, head_dim=16, expansion=4)
+    model = TarFlow(3, 64, 64, 8, 64, 2; attn_layers_per_block=2, head_dim=16, expansion=4)
     θ = ParametricOperators.init!(model, Dict{ParametricOperators.ParOperator,Any}())
     x = get_data(dataset, 1; batch=1)
     p = patch_data(model.patch_config, x)
@@ -164,7 +164,7 @@ function test_flow_invertibility()
     # Test full TarFlow invertibility
     B, C, H, W = 1, 3, 64, 64
     x = rand(Float32, B, C, H, W)
-    model = TarFlow(C, H, 8, 64, 3; attn_layers_per_block=2, head_dim=16, expansion=4)
+    model = TarFlow(C, H, W, 8, 64, 3; attn_layers_per_block=2, head_dim=16, expansion=4)
     θ = ParametricOperators.init!(model, Dict{ParOperator,Any}())
     
     # Forward pass through full model

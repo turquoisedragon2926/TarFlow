@@ -17,7 +17,8 @@ function affine_transform(x::AbstractArray{<:Real,3},
                           a::AbstractArray{<:Real,3},
                           b::AbstractArray{<:Real,3})
     # clamp the log-scale to avoid exp overflow/underflow during training
-    a_clamped = clamp.(a, -20f0, 20f0)
+    T = eltype(x)
+    a_clamped = clamp.(a, convert(T, -20f0), convert(T, 20f0))
     E = exp.(-a_clamped)
     y = ((x .- b) .* E)
     # log|det J| = -sum(a) over masked positions and channels, per batch
@@ -82,7 +83,7 @@ function init!(m::MetaBlock, θ::Parameters)
     init!(m.proj_in, θ)
     init!(m.proj_out, θ; w_init_fn=zeros)
     # Small positional embeddings like python (std ~1e-2)
-    init!(m.pos_embed, θ; w_init_fn=(T,mn,nn)->(0.01f0 .* randn(T, mn, nn)))
+    init!(m.pos_embed, θ; w_init_fn=(T,mn,nn)->(convert(T, 0.01f0) .* randn(T, mn, nn)))
     for b in m.attn_blocks
         init!(b, θ)
     end
@@ -102,7 +103,7 @@ function forward(m::MetaBlock, θ::Any, x::AbstractArray{<:Real,3}; attn_mask::A
     h = x * m.proj_out(θ)                 # (B, T, out_dim)
 
     # shift h to the right by one token
-    zhead = h[:, T:T, :] .* 0f0 # TODO: check if this is correct bc somehow its giving different loss
+    zhead = h[:, T:T, :] .* convert(eltype(h), 0f0) # TODO: check if this is correct bc somehow its giving different loss
     # zhead = zeros(eltype(h), B, 1, size(h,3)) |> gpu
     h = cat(zhead, @view h[:, 1:T-1, :]; dims=2)
 

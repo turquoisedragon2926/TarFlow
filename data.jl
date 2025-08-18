@@ -1,6 +1,7 @@
 using Random
 using Images
 using JLD2
+using Statistics
 
 abstract type AbstractDataset end
 
@@ -37,10 +38,11 @@ struct VelocityModelDataset <: AbstractDataset
     x_data::AbstractArray{<:Real,4}
 end
 
-function VelocityModelDataset(path)
+function VelocityModelDataset(path; subsample_size_x::Int=1, subsample_size_y::Int=1)
     x_data = JLD2.jldopen(path, "r")["x_data"][:,end:-1:1, :, 1:1000];
     x_data = permutedims(x_data, (4, 3, 1, 2));
     x_data = x_data .- mean(x_data, dims=(4)) ./ std(x_data, dims=(4))
+    x_data = x_data[:, :, 1:subsample_size_x:end, 1:subsample_size_y:end]
     return VelocityModelDataset(x_data)
 end
 

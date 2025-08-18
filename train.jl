@@ -58,7 +58,7 @@ function main(hp::HyperParams=HyperParams(), dataset::AbstractDataset=SingleCatD
     losses = []
     l2_terms = []
     ld_terms = []
-    meter = Progress(hp.epochs)
+    meter = Progress(hp.epochs * hp.steps_per_epoch)
     
     step_count = 0
     for epoch in 1:hp.epochs
@@ -69,7 +69,7 @@ function main(hp::HyperParams=HyperParams(), dataset::AbstractDataset=SingleCatD
             x = get_data(dataset, step; batch=hp.batch)
             # Add Gaussian input noise and clamp to [0,1]
             x = x .+ hp.noise_std .* randn(Float32, size(x))
-            x = clamp.(x, -5f0, 5f0)
+            x = Float32.(clamp.(x, -5f0, 5f0))
             p = patch_data(model.patch_config, x) |> device
             attn_mask = tril_mask(size(p,2)) |> device
             global ld_term = 0.0f0
@@ -112,8 +112,10 @@ function main(hp::HyperParams=HyperParams(), dataset::AbstractDataset=SingleCatD
             end
             state, θ = Flux.Optimisers.update(state, θ, gdict)
             θ = Dict{ParOperator, Any}(θ)
+
+            meter.desc = "epoch=$epoch step=$step loss=$(round(total/hp.steps_per_epoch, digits=4))"
+            next!(meter)
         end
-        meter.desc = "epoch=$epoch loss=$(round(total/hp.steps_per_epoch, digits=4))"
         if epoch % hp.save_every == 0
             samples = []
             θ_cpu = θ |> cpu
@@ -123,9 +125,8 @@ function main(hp::HyperParams=HyperParams(), dataset::AbstractDataset=SingleCatD
                 push!(samples, x_recon)
             end
             @info "Saving checkpoint"
-            JLD2.@save "$(ckpts_dir)/checkpoint_$(epoch).jld2" model θ_cpu samples losses l2_terms ld_terms
+            JLD2.@save "$(ckpts_dir)/checkpoint_$(epoch).jld2" model θ_cpu samples losses l2_terms ld_terms hp
         end
-        next!(meter)
     end
 end
 
@@ -146,20 +147,39 @@ end
 # dataset = SingleCatDataset()
 # main(hp, dataset; device=gpu)
 
+# #### To Train on Velocity Model Dataset ####
+# dataset = VelocityModelDataset("data/x_data_no_zero.jld2")
+# hp = HyperParams(epochs=500,
+#                 steps_per_epoch=20,
+#                 batch=32, 
+#                 channels=256,
+#                 patch=64,
+#                 H=512, 
+#                 W=256, 
+#                 C=1, 
+#                 save_every=10,
+#                 attn_layers_per_block=8,
+#                 num_blocks=32,
+#                 head_dim=8,
+#                 expansion=4,
+#                 noise_std=0.2)
+# main(hp, dataset; device=gpu, ckpts_dir="vel_ckpts")
+
+
 #### To Train on Velocity Model Dataset ####
-dataset = VelocityModelDataset("data/x_data_no_zero.jld2")
+dataset = VelocityModelDataset("data/x_data_no_zero.jld2", subsample_size_x=8, subsample_size_y=4)
 hp = HyperParams(epochs=500,
-                steps_per_epoch=50,
-                batch=32, 
-                channels=256,
-                patch=64,
-                H=512, 
-                W=256, 
+                steps_per_epoch=60,
+                batch=16, 
+                channels=96,
+                patch=2,
+                H=64, 
+                W=64, 
                 C=1, 
-                save_every=10,
+                save_every=5,
                 attn_layers_per_block=8,
-                num_blocks=32,
-                head_dim=8,
+                num_blocks=8,
+                head_dim=96,
                 expansion=4,
-                noise_std=0.2)
-main(hp, dataset; device=gpu, ckpts_dir="vel_ckpts")
+                noise_std=0.05)
+main(hp, dataset; device=gpu, ckpts_dir="vel_ckpts_new")

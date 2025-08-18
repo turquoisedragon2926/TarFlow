@@ -74,3 +74,6 @@ end
 
 # TODO: support forward and backward on GPU
 # TODO: support gradient for patching operation: low priority
+# TODO: Distributed transformer support
+# TODO: Dynamic Type Handling throughout the model
+# TODO: Train on F16, curently nulls out the loss for some reason

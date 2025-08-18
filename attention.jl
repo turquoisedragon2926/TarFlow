@@ -35,9 +35,12 @@ end
 Simple, stateless LayerNorm over the last dimension (no affine params for now).
 """
 layernorm(x::AbstractArray) = begin
-    μ = mean(x; dims=3)
-    σ2 = mean((x .- μ) .^ 2; dims=3)
-    (x .- μ) ./ sqrt.(σ2 .+ 1f-5)
+    T = eltype(x)
+    eps = T(1f-5)
+    # Force mean to return same type as input
+    μ = T.(mean(x; dims=3))
+    σ2 = T.(mean((x .- μ) .^ 2; dims=3))
+    (x .- μ) ./ sqrt.(σ2 .+ eps)
 end
 
 """
@@ -46,8 +49,8 @@ Input x: (B, T, C). Returns (B, T, C).
 """
 
 function forward(A::Attention, θ::Any, x::AbstractArray{<:Real,3};
-                 mask::AbstractMatrix{<:Real}=ones(Bool, size(x,2), size(x,2)),
-                 temp::Float32=1.0f0)
+                mask::AbstractMatrix=ones(Bool, size(x,2), size(x,2)),
+                temp::Real=1.0f0)
 
     B, T, C = size(x)
     x̂ = layernorm(x)  # assumes LN over last dim
@@ -73,16 +76,16 @@ function forward(A::Attention, θ::Any, x::AbstractArray{<:Real,3};
     vBL = reshape(v, T, D, B*H)
 
     # match python sqrt_scale**2 / temp where sqrt_scale = D**(-0.25)
-    s = Float32(D^-0.5 / temp)
+    s = convert(eltype(x), D^-0.5 / temp)
     # scores: (T,T,BH) = (T,D,BH) × (D,T,BH)
     scoresBL = batched_mul(qBL, permutedims(kBL, (2,1,3))) .* s  # (T, T, BH)
 
     # mask (T,T) → (T,T,1) and broadcast; no mutation
     if !isnothing(mask)
         @assert size(mask) == (size(scoresBL,1), size(scoresBL,2))
-        m = reshape(Float32.(mask), size(scoresBL,1), size(scoresBL,2), 1)
+        m = reshape(convert.(eltype(scoresBL), mask), size(scoresBL,1), size(scoresBL,2), 1)
         neginf = convert(eltype(scoresBL), -1e9) # finit substitute for -Inf
-        scoresBL = scoresBL .* m .+ (1f0 .- m) .* neginf
+        scoresBL = scoresBL .* m .+ (convert(eltype(scoresBL), 1f0) .- m) .* neginf
     end
 
     # softmax over keys (the 2nd dim in (Tq,Tk,BH))

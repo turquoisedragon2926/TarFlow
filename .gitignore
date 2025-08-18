@@ -3,3 +3,4 @@ ParametricOperators.jl/
 ckpts/
 data/
 vel_ckpts/
+vel_ckpts_new/
