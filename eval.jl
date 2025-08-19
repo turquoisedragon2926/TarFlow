@@ -33,7 +33,7 @@ heatmap(x_back[end][1, 1, :, :]')
 
 norm(x_back[end][1, 1, :, :] .- x[1, 1, :, :])
 
-data = JLD2.load("vel_ckpts_new/checkpoint_20.jld2")
+data = JLD2.load("vel_ckpts_new/checkpoint_30.jld2")
 
 samples = data["samples"];
 hp = data["hp"];
