@@ -15,7 +15,7 @@ include("model.jl")
 include("utils.jl")
 
 plots_dir = "plots_64"
-data = JLD2.load("vel_ckpts/checkpoint_10.jld2")
+data = JLD2.load("vel_ckpts_new/checkpoint_20.jld2")
 model = data["model"];
 θ = data["θ_cpu"];
 
@@ -33,7 +33,7 @@ heatmap(x_back[end][1, 1, :, :]')
 
 norm(x_back[end][1, 1, :, :] .- x[1, 1, :, :])
 
-data = JLD2.load("vel_ckpts_new/checkpoint_15.jld2")
+data = JLD2.load("vel_ckpts_new/checkpoint_20.jld2")
 
 samples = data["samples"];
 hp = data["hp"];
@@ -63,7 +63,7 @@ savefig("$(plots_dir)/losses.png")
 # Create combined plot with samples and hyperparameters
 param_text = """
 Hyperparameters:
-epochs: 15
+epochs: 20
 steps_per_epoch: $(hp.steps_per_epoch)
 batch: $(hp.batch)
 channels: $(hp.channels)
